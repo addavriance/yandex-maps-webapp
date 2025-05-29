@@ -170,12 +170,6 @@
             flex: 1;
             width: 100%;
             position: relative;
-            transition: height 0.3s ease;
-        }
-
-        /* Когда информация о пункте скрыта, карта занимает больше места */
-        #map.full-height {
-            height: calc(100vh - 200px); /* Вычитаем высоту хедера */
         }
 
         .map-overlay {
@@ -219,12 +213,8 @@
             border-top: 1px solid var(--border);
             transform: translateY(100%);
             transition: transform 0.3s ease;
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
+            position: relative;
             box-shadow: 0 -4px 12px var(--shadow);
-            z-index: 1000;
         }
 
         .point-info.active {
@@ -463,9 +453,13 @@
             <span class="feature-tag">✓ Бережная доставка</span>
             <span class="feature-tag">✓ Хранение до 7 дней</span>
         </div>
-        <button class="select-button" id="selectButton">
-            Выбрать этот пункт выдачи
+        <button class="select-button" id="selectButton" style="display: none;">
+            Кнопка скрыта - используйте кнопку внизу экрана
         </button>
+        <div id="mainButtonHint"
+             style="display: none; text-align: center; padding: 16px; color: var(--text-light); font-size: 14px;">
+            👇 Используйте кнопку внизу экрана для выбора
+        </div>
     </div>
 </div>
 
@@ -474,25 +468,15 @@
 
     console.log('Telegram WebApp object:', tg);
     console.log('WebApp version:', tg.version);
-    console.log('WebApp initData:', tg.initData);
-    console.log('WebApp user:', tg.initDataUnsafe?.user);
     console.log('Platform:', tg.platform);
-    console.log('Is iOS:', /iPad|iPhone|iPod/.test(navigator.userAgent));
 
     tg.ready();
     tg.expand();
 
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const isTelegramDesktop = tg.platform === 'tdesktop';
-
-    if (isIOS) {
-        console.log('iOS detected - using alternative approach');
-        tg.MainButton.hide();
-    } else {
-        console.log('Non-iOS platform - using MainButton');
-        tg.MainButton.text = "Выберите пункт выдачи";
-        tg.MainButton.hide();
-    }
+    tg.MainButton.text = "Выберите пункт выдачи на карте";
+    tg.MainButton.color = "#4A7C59";
+    tg.MainButton.textColor = "#FFFFFF";
+    tg.MainButton.hide();
 
     function sendDeliveryData() {
         if (!selectedPoint) {
@@ -508,43 +492,20 @@
         };
 
         console.log('Sending data to Telegram:', data);
-        console.log('Platform:', tg.platform, 'iOS:', isIOS);
+
+        tg.MainButton.showProgress();
 
         try {
-            if (tg.sendData) {
-                tg.sendData(JSON.stringify(data));
-                console.log('Data sent successfully via sendData');
-
-                if (isIOS) {
-                    setTimeout(() => {
-                        window.close();
-                        if (tg.close) {
-                            tg.close();
-                        }
-                    }, 1000);
-                } else {
-                    setTimeout(() => {
-                        if (tg.close) {
-                            tg.close();
-                        }
-                    }, 300);
-                }
-            } else {
-                console.error('tg.sendData is not available');
-                return;
-            }
+            tg.sendData(JSON.stringify(data));
+            console.log('Data sent successfully');
         } catch (error) {
             console.error('Error sending data:', error);
-            alert('Ошибка отправки данных: ' + error.message);
+            tg.showAlert('Ошибка отправки данных');
+            tg.MainButton.hideProgress();
         }
     }
 
-    if (!isIOS) {
-        tg.MainButton.onClick(function () {
-            console.log('MainButton clicked');
-            sendDeliveryData();
-        });
-    }
+    tg.MainButton.onClick(sendDeliveryData);
 
     const applyTelegramTheme = () => {
         if (tg.themeParams.bg_color) {
@@ -607,8 +568,8 @@
                         <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="rgba(0, 0, 0, 0.3)"/>
                     </filter>
                 </defs>
-                <path d="M16 42C16 42 32 26 32 16C32 7.163 24.837 0 16 0S0 7.163 0 16C0 26 16 42 16 42Z"
-                      fill="url(#pinGradient_${service}${isSelected ? '_selected' : ''})"
+                <path d="M16 42C16 42 32 26 32 16C32 7.163 24.837 0 16 0S0 7.163 0 16C0 26 16 42 16 42Z" 
+                      fill="url(#pinGradient_${service}${isSelected ? '_selected' : ''})" 
                       filter="url(#shadow_${service}${isSelected ? '_selected' : ''})"/>
                 <circle cx="16" cy="16" r="8" fill="white"/>
                 <text x="16" y="21" text-anchor="middle" font-size="12" fill="${color1}">${config.icon}</text>
@@ -668,8 +629,6 @@
             setTimeout(() => {
                 isMapReady = true;
                 lastSearchBounds = map.getBounds();
-
-                document.getElementById('map').classList.add('full-height');
             }, 2000);
 
             document.getElementById('loader').classList.remove('active');
@@ -905,14 +864,16 @@
         pointIconElement.textContent = serviceConfig.icon;
         pointIconElement.style.background = `linear-gradient(135deg, ${serviceConfig.colors[0]}20, ${serviceConfig.colors[1]}20)`;
 
-        document.getElementById('map').classList.remove('full-height');
-
         document.getElementById('pointInfo').classList.add('active');
 
-        if (!isIOS) {
-            tg.MainButton.text = `Выбрать ${serviceConfig.name}`;
-            tg.MainButton.show();
-        }
+        tg.MainButton.text = `Выбрать пункт ${serviceConfig.name}`;
+        tg.MainButton.show();
+
+        const selectButton = document.getElementById('selectButton');
+        selectButton.style.display = 'none';
+
+        const hint = document.getElementById('mainButtonHint');
+        hint.style.display = 'block';
 
         map.setCenter(point.coordinates, 16, {
             duration: 500
@@ -930,12 +891,7 @@
 
             document.getElementById('pointInfo').classList.remove('active');
             selectedPoint = null;
-
-            document.getElementById('map').classList.add('full-height');
-
-            if (!isIOS) {
-                tg.MainButton.hide();
-            }
+            tg.MainButton.hide();
 
             lastSearchBounds = null;
             lastSearchTime = 0;
@@ -962,13 +918,6 @@
         }
     });
 
-    document.getElementById('selectButton').addEventListener('click', function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        console.log('Select button clicked, iOS:', isIOS);
-        sendDeliveryData();
-    });
 </script>
 </body>
 </html>
