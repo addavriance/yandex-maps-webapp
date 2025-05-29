@@ -289,6 +289,12 @@
             transition: all 0.3s ease;
             position: relative;
             overflow: hidden;
+            /* Улучшения для iOS */
+            -webkit-appearance: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+            touch-action: manipulation;
         }
 
         .select-button::before {
@@ -444,7 +450,10 @@
             <span class="feature-tag">✓ Хранение до 7 дней</span>
         </div>
         <button class="select-button" id="selectButton">
-            Выбрать этот пункт выдачи
+            <span id="selectButtonText">Выбрать этот пункт выдачи</span>
+            <span id="iosHint" style="display: none; font-size: 12px; opacity: 0.8;">
+                На iOS используйте кнопку внизу экрана ↓
+            </span>
         </button>
     </div>
 </div>
@@ -457,17 +466,37 @@
     console.log('WebApp version:', tg.version);
     console.log('WebApp initData:', tg.initData);
     console.log('WebApp user:', tg.initDataUnsafe?.user);
+    console.log('Platform:', tg.platform);
+    console.log('Is iOS:', /iPad|iPhone|iPod/.test(navigator.userAgent));
 
     tg.ready();
     tg.expand();
 
-    // Enable the main button
-    tg.MainButton.text = "Выберите пункт выдачи";
-    tg.MainButton.hide();
+    // Определяем, это iOS или нет
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isTelegramDesktop = tg.platform === 'tdesktop';
 
+    // Настройки для разных платформ
+    if (isIOS) {
+        console.log('iOS detected - using MainButton only');
+        // На iOS используем только MainButton
+        tg.MainButton.text = "Выберите пункт выдачи";
+        tg.MainButton.hide();
+    } else {
+        console.log('Non-iOS platform - using both buttons');
+        // На других платформах можем использовать оба варианта
+        tg.MainButton.text = "Выберите пункт выдачи";
+        tg.MainButton.hide();
+    }
+
+    // Функция отправки данных (единая точка отправки)
     function sendDeliveryData() {
         if (!selectedPoint) {
-            tg.showAlert('Пожалуйста, выберите пункт выдачи на карте');
+            if (isIOS) {
+                tg.showAlert('Пожалуйста, выберите пункт выдачи на карте');
+            } else {
+                alert('Пожалуйста, выберите пункт выдачи на карте');
+            }
             return;
         }
 
@@ -479,33 +508,47 @@
         };
 
         console.log('Sending data to Telegram:', data);
+        console.log('Platform:', tg.platform, 'iOS:', isIOS);
 
         try {
             if (tg.sendData) {
                 tg.sendData(JSON.stringify(data));
-                console.log('Data sent successfully');
+                console.log('Data sent successfully via sendData');
+
+                // На iOS добавляем небольшую задержку перед закрытием
+                const closeDelay = isIOS ? 300 : 100;
+                setTimeout(() => {
+                    if (tg.close) {
+                        tg.close();
+                        console.log('WebApp closed');
+                    } else {
+                        console.error('tg.close is not available');
+                    }
+                }, closeDelay);
             } else {
                 console.error('tg.sendData is not available');
-                tg.showAlert('Ошибка: sendData недоступен');
+                if (isIOS) {
+                    tg.showAlert('Ошибка: sendData недоступен');
+                } else {
+                    alert('Ошибка: sendData недоступен');
+                }
                 return;
             }
-
-            // Close WebApp
-            setTimeout(() => {
-                if (tg.close) {
-                    tg.close();
-                } else {
-                    console.error('tg.close is not available');
-                }
-            }, 100);
         } catch (error) {
             console.error('Error sending data:', error);
-            tg.showAlert('Ошибка отправки данных: ' + error.message);
+            if (isIOS) {
+                tg.showAlert('Ошибка отправки данных: ' + error.message);
+            } else {
+                alert('Ошибка отправки данных: ' + error.message);
+            }
         }
     }
 
     // Handle main button click
-    tg.MainButton.onClick(sendDeliveryData);
+    tg.MainButton.onClick(function() {
+        console.log('MainButton clicked');
+        sendDeliveryData();
+    });
 
     // Apply Telegram theme colors
     const applyTelegramTheme = () => {
@@ -516,6 +559,17 @@
                 document.documentElement.style.setProperty('--white', '#2a2a2a');
                 document.documentElement.style.setProperty('--text-dark', '#e0e0e0');
                 document.documentElement.style.setProperty('--border', 'rgba(255, 255, 255, 0.1)');
+            }
+        }
+
+        // Показываем подсказку для iOS
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        if (isIOS) {
+            const hint = document.getElementById('iosHint');
+            const buttonText = document.getElementById('selectButtonText');
+            if (hint && buttonText) {
+                hint.style.display = 'block';
+                buttonText.style.fontSize = '14px';
             }
         }
     };
@@ -987,10 +1041,16 @@
 
     // Handle select button
     document.getElementById('selectButton').addEventListener('click', function() {
-        if (selectedPoint) {
-            sendDeliveryData();
+        console.log('Select button clicked, iOS:', isIOS);
+
+        if (isIOS) {
+            if (selectedPoint) {
+                tg.showAlert('Используйте кнопку "Выбрать" внизу экрана');
+            } else {
+                tg.showAlert('Пожалуйста, выберите пункт выдачи на карте');
+            }
         } else {
-            alert('Пожалуйста, выберите пункт выдачи на карте');
+            sendDeliveryData();
         }
     });
 </script>
