@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Выбор пункта выдачи - Жидкая психология</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://api-maps.yandex.ru/2.1/?apikey=2e5961b4-eb63-4608-9704-3e74a301e9a3&lang=ru_RU" type="text/javascript"></script>
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=2e5961b4-eb63-4608-9704-3e74a301e9a3&lang=ru_RU"
+            type="text/javascript"></script>
     <style>
         * {
             margin: 0;
@@ -169,6 +170,12 @@
             flex: 1;
             width: 100%;
             position: relative;
+            transition: height 0.3s ease;
+        }
+
+        /* Когда информация о пункте скрыта, карта занимает больше места */
+        #map.full-height {
+            height: calc(100vh - 200px); /* Вычитаем высоту хедера */
         }
 
         .map-overlay {
@@ -212,8 +219,12 @@
             border-top: 1px solid var(--border);
             transform: translateY(100%);
             transition: transform 0.3s ease;
-            position: relative;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
             box-shadow: 0 -4px 12px var(--shadow);
+            z-index: 1000;
         }
 
         .point-info.active {
@@ -363,7 +374,9 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         /* Responsive adjustments */
@@ -407,7 +420,8 @@
 
     <div class="search-container">
         <div class="search-wrapper">
-            <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2">
                 <circle cx="11" cy="11" r="8"></circle>
                 <path d="m21 21-4.35-4.35"></path>
             </svg>
@@ -450,16 +464,12 @@
             <span class="feature-tag">✓ Хранение до 7 дней</span>
         </div>
         <button class="select-button" id="selectButton">
-            <span id="selectButtonText">Выбрать этот пункт выдачи</span>
-            <span id="iosHint" style="display: none; font-size: 12px; opacity: 0.8;">
-                На iOS используйте кнопку внизу экрана ↓
-            </span>
+            Выбрать этот пункт выдачи
         </button>
     </div>
 </div>
 
 <script>
-    // Telegram WebApp API
     const tg = window.Telegram.WebApp;
 
     console.log('Telegram WebApp object:', tg);
@@ -472,31 +482,21 @@
     tg.ready();
     tg.expand();
 
-    // Определяем, это iOS или нет
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     const isTelegramDesktop = tg.platform === 'tdesktop';
 
-    // Настройки для разных платформ
     if (isIOS) {
-        console.log('iOS detected - using MainButton only');
-        // На iOS используем только MainButton
-        tg.MainButton.text = "Выберите пункт выдачи";
+        console.log('iOS detected - using alternative approach');
         tg.MainButton.hide();
     } else {
-        console.log('Non-iOS platform - using both buttons');
-        // На других платформах можем использовать оба варианта
+        console.log('Non-iOS platform - using MainButton');
         tg.MainButton.text = "Выберите пункт выдачи";
         tg.MainButton.hide();
     }
 
-    // Функция отправки данных (единая точка отправки)
     function sendDeliveryData() {
         if (!selectedPoint) {
-            if (isIOS) {
-                tg.showAlert('Пожалуйста, выберите пункт выдачи на карте');
-            } else {
-                alert('Пожалуйста, выберите пункт выдачи на карте');
-            }
+            tg.showAlert('Пожалуйста, выберите пункт выдачи на карте');
             return;
         }
 
@@ -515,42 +515,37 @@
                 tg.sendData(JSON.stringify(data));
                 console.log('Data sent successfully via sendData');
 
-                // На iOS добавляем небольшую задержку перед закрытием
-                const closeDelay = isIOS ? 300 : 100;
-                setTimeout(() => {
-                    if (tg.close) {
-                        tg.close();
-                        console.log('WebApp closed');
-                    } else {
-                        console.error('tg.close is not available');
-                    }
-                }, closeDelay);
+                if (isIOS) {
+                    setTimeout(() => {
+                        window.close();
+                        if (tg.close) {
+                            tg.close();
+                        }
+                    }, 1000);
+                } else {
+                    setTimeout(() => {
+                        if (tg.close) {
+                            tg.close();
+                        }
+                    }, 300);
+                }
             } else {
                 console.error('tg.sendData is not available');
-                if (isIOS) {
-                    tg.showAlert('Ошибка: sendData недоступен');
-                } else {
-                    alert('Ошибка: sendData недоступен');
-                }
                 return;
             }
         } catch (error) {
             console.error('Error sending data:', error);
-            if (isIOS) {
-                tg.showAlert('Ошибка отправки данных: ' + error.message);
-            } else {
-                alert('Ошибка отправки данных: ' + error.message);
-            }
+            alert('Ошибка отправки данных: ' + error.message);
         }
     }
 
-    // Handle main button click
-    tg.MainButton.onClick(function() {
-        console.log('MainButton clicked');
-        sendDeliveryData();
-    });
+    if (!isIOS) {
+        tg.MainButton.onClick(function () {
+            console.log('MainButton clicked');
+            sendDeliveryData();
+        });
+    }
 
-    // Apply Telegram theme colors
     const applyTelegramTheme = () => {
         if (tg.themeParams.bg_color) {
             const isDark = tg.colorScheme === 'dark';
@@ -561,59 +556,41 @@
                 document.documentElement.style.setProperty('--border', 'rgba(255, 255, 255, 0.1)');
             }
         }
-
-        // Показываем подсказку для iOS
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-        if (isIOS) {
-            const hint = document.getElementById('iosHint');
-            const buttonText = document.getElementById('selectButtonText');
-            if (hint && buttonText) {
-                hint.style.display = 'block';
-                buttonText.style.fontSize = '14px';
-            }
-        }
     };
 
     applyTelegramTheme();
     tg.onEvent('themeChanged', applyTelegramTheme);
 
-    // Global variables
     let map;
     let selectedPoint = null;
     let currentService = 'sdek';
     let userLocation = null;
     let currentMarkers = [];
-    let pendingMarkers = []; // Новые маркеры, которые ждут замены
+    let pendingMarkers = [];
     let searchTimeout;
     let searchManager;
     let isMapReady = false;
     let lastSearchTime = 0;
     let lastSearchBounds = null;
-    let isSearching = false; // Флаг активного поиска
-
-    // Service configurations with colors and icons
+    let isSearching = false;
     const serviceConfigs = {
         'sdek': {
             query: 'Пункт выдачи СДЭК',
-            colors: ['#00B956', '#7ED321'], // СДЭК зеленый
-            icon: '🚚',
+            colors: ['#00B956', '#7ED321'], icon: '🚚',
             name: 'СДЭК'
         },
         'yandex': {
             query: 'Пункт выдачи Яндекс Маркет',
-            colors: ['#FFDB4D', '#FF9500'], // Яндекс желтый
-            icon: '🛒',
+            colors: ['#FFDB4D', '#FF9500'], icon: '🛒',
             name: 'Яндекс'
         },
         'boxberry': {
             query: 'Пункт выдачи Boxberry',
-            colors: ['#8E44AD', '#E74C3C'], // Boxberry фиолетово-красный
-            icon: '📦',
+            colors: ['#8E44AD', '#E74C3C'], icon: '📦',
             name: 'Boxberry'
         }
     };
 
-    // Create improved SVG icon for delivery points with service-specific colors
     function createDeliveryPointIcon(service, isSelected = false) {
         const config = serviceConfigs[service];
         const color1 = isSelected ? config.colors[1] : config.colors[0];
@@ -641,75 +618,60 @@
         return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgIcon)));
     }
 
-    // Initialize map
     ymaps.ready(init);
 
     function init() {
-        // Show loader
         document.getElementById('loader').classList.add('active');
 
-        // Get user location by IP
         getUserLocation().then(location => {
             userLocation = location;
 
-            // Create map
             map = new ymaps.Map("map", {
                 center: location,
                 zoom: 12,
                 controls: ['zoomControl', 'geolocationControl']
             });
 
-            // Initialize search manager
             searchManager = ymaps.search;
 
-            // Search for initial delivery points
             searchDeliveryPoints();
 
-            // Add debounced search on bounds change
             let searchTimeout = null;
 
             map.events.add(['boundschange', 'actionend'], function (e) {
-                // Skip if map is not ready
                 if (!isMapReady) return;
 
-                // Clear previous timeout
                 if (searchTimeout) {
                     clearTimeout(searchTimeout);
                     searchTimeout = null;
                 }
 
-                // Set new timeout
-                searchTimeout = setTimeout(function() {
-                    // Check if bounds changed significantly
+                searchTimeout = setTimeout(function () {
                     const currentBounds = map.getBounds();
                     const currentTime = Date.now();
 
-                    // Skip if search was done recently (less than 2 seconds ago)
                     if (currentTime - lastSearchTime < 2000) {
                         return;
                     }
 
-                    // Skip if bounds didn't change much
                     if (lastSearchBounds && areBoundsSimilar(lastSearchBounds, currentBounds)) {
                         return;
                     }
 
-                    // Update last search info
                     lastSearchTime = currentTime;
                     lastSearchBounds = currentBounds;
 
-                    // Search in new area
                     searchDeliveryPoints(null, true);
-                }, 1500); // Wait 1.5 seconds
+                }, 1500);
             });
 
-            // Mark map as ready after initial setup
             setTimeout(() => {
                 isMapReady = true;
                 lastSearchBounds = map.getBounds();
+
+                document.getElementById('map').classList.add('full-height');
             }, 2000);
 
-            // Hide loader
             document.getElementById('loader').classList.remove('active');
             setTimeout(() => {
                 document.querySelector('.map-overlay').style.display = 'none';
@@ -717,7 +679,6 @@
         });
     }
 
-    // Helper function to check if bounds are similar
     function areBoundsSimilar(bounds1, bounds2, threshold = 0.01) {
         if (!bounds1 || !bounds2) return false;
 
@@ -727,10 +688,8 @@
             Math.abs(bounds1[1][1] - bounds2[1][1]) < threshold;
     }
 
-    // Get user location by IP with fallback
     async function getUserLocation() {
         try {
-            // Try multiple IP geolocation services
             const services = [
                 'https://ipapi.co/json/',
                 'https://ip-api.com/json/',
@@ -740,8 +699,7 @@
             for (const service of services) {
                 try {
                     const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
-
+                    const timeoutId = setTimeout(() => controller.abort(), 3000);
                     const response = await fetch(service, {
                         signal: controller.signal,
                         mode: 'cors',
@@ -753,7 +711,6 @@
                     if (response.ok) {
                         const data = await response.json();
 
-                        // Handle different API response formats
                         if (service.includes('ipapi.co')) {
                             return [data.longitude, data.latitude];
                         } else if (service.includes('ip-api.com')) {
@@ -772,12 +729,10 @@
             throw new Error('All geolocation services failed');
         } catch (error) {
             console.error('Error getting location:', error);
-            // Default to Moscow
             return [37.617635, 55.755814];
         }
     }
 
-    // Center map on user location
     async function centerOnUserLocation() {
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
@@ -794,23 +749,17 @@
         }
     }
 
-    // Search for delivery points using real Yandex Search
     function searchDeliveryPoints(customQuery = null, skipAnimation = false) {
-        // Skip if map is not initialized or already searching
         if (!map || !searchManager || isSearching) return;
 
-        // Set searching flag
         isSearching = true;
 
-        // Update last search time
         lastSearchTime = Date.now();
 
-        // Show loader overlay only if not skipping animation and no current markers
         if (!skipAnimation && currentMarkers.length === 0) {
             document.querySelector('.map-overlay').style.display = 'flex';
             document.querySelector('.map-overlay span').textContent = 'Ищем пункты выдачи...';
         } else if (skipAnimation && currentMarkers.length > 0) {
-            // Show subtle indicator for background search
             document.querySelector('.map-overlay').style.display = 'flex';
             document.querySelector('.map-overlay span').textContent = 'Обновляем пункты...';
             document.querySelector('.map-overlay').style.opacity = '0.7';
@@ -819,7 +768,6 @@
         const query = customQuery || serviceConfigs[currentService].query;
 
         try {
-            // Use Yandex Maps search with error handling and retry logic
             const searchOptions = {
                 results: 20,
                 boundedBy: map.getBounds(),
@@ -827,16 +775,13 @@
             };
 
             searchManager(query, searchOptions).then(function (res) {
-                // Clear pending markers array
                 pendingMarkers = [];
 
-                // Create new markers but don't add them to map yet
                 res.geoObjects.each(function (geoObject) {
                     try {
                         const coordinates = geoObject.geometry.getCoordinates();
                         const properties = geoObject.properties.getAll();
 
-                        // Create styled placemark with improved icon
                         const placemark = new ymaps.Placemark(coordinates, {
                             balloonContentHeader: properties.name,
                             balloonContentBody: properties.description || properties.text,
@@ -855,12 +800,10 @@
                             iconImageOffset: [-16, -42]
                         });
 
-                        // Handle placemark click
                         placemark.events.add('click', function (e) {
                             const clickedPlacemark = e.get('target');
                             const pointData = clickedPlacemark.properties.get('deliveryPointData');
 
-                            // Update all placemarks to unselected state
                             currentMarkers.forEach(marker => {
                                 const markerData = marker.properties.get('deliveryPointData');
                                 if (markerData) {
@@ -868,27 +811,22 @@
                                 }
                             });
 
-                            // Set clicked placemark as selected
                             clickedPlacemark.options.set('iconImageHref', createDeliveryPointIcon(pointData.service, true));
 
                             selectPoint(pointData);
                         });
 
-                        // Add to pending markers array
                         pendingMarkers.push(placemark);
                     } catch (markerError) {
                         console.warn('Error creating marker:', markerError);
                     }
                 });
 
-                // Now smoothly replace old markers with new ones
                 replaceMarkersSmooth();
 
-                // Hide loader
                 document.querySelector('.map-overlay').style.display = 'none';
                 document.querySelector('.map-overlay').style.opacity = '1';
 
-                // Adjust map bounds to show all results (only for initial search)
                 if (res.geoObjects.getLength() > 0 && !customQuery && !skipAnimation && currentMarkers.length === 0) {
                     try {
                         const bounds = res.geoObjects.getBounds();
@@ -902,7 +840,6 @@
                         console.log('Bounds adjustment skipped:', e.message);
                     }
                 } else if (res.geoObjects.getLength() === 0) {
-                    // No results found
                     document.querySelector('.map-overlay').style.display = 'flex';
                     document.querySelector('.map-overlay span').textContent = 'Пункты не найдены, попробуйте другой район';
                     setTimeout(() => {
@@ -910,12 +847,10 @@
                     }, 3000);
                 }
 
-                // Reset searching flag
                 isSearching = false;
             }).catch(function (error) {
                 console.error('Search error:', error);
 
-                // Retry logic for transient errors
                 if (error.message && (error.message.includes('network') || error.message.includes('fetch'))) {
                     console.log('Retrying search due to network error...');
                     setTimeout(() => {
@@ -937,23 +872,18 @@
         }
     }
 
-    // Smoothly replace old markers with new ones
     function replaceMarkersSmooth() {
-        // Add all new markers to map first
         pendingMarkers.forEach(marker => {
             map.geoObjects.add(marker);
         });
 
-        // Then remove old markers with a small delay for smooth transition
         setTimeout(() => {
             clearMarkers();
-            // Replace current markers with pending ones
             currentMarkers = [...pendingMarkers];
             pendingMarkers = [];
         }, 100);
     }
 
-    // Clear all markers
     function clearMarkers() {
         if (map && map.geoObjects) {
             currentMarkers.forEach(marker => {
@@ -963,29 +893,27 @@
         }
     }
 
-    // Select delivery point
     function selectPoint(point) {
         selectedPoint = point;
 
-        // Get service config for icon
         const serviceConfig = serviceConfigs[point.service];
 
-        // Update UI
         document.getElementById('pointTitle').textContent = point.name;
         document.getElementById('pointAddress').textContent = point.address;
 
-        // Update point icon based on service
         const pointIconElement = document.querySelector('.point-icon');
         pointIconElement.textContent = serviceConfig.icon;
         pointIconElement.style.background = `linear-gradient(135deg, ${serviceConfig.colors[0]}20, ${serviceConfig.colors[1]}20)`;
 
+        document.getElementById('map').classList.remove('full-height');
+
         document.getElementById('pointInfo').classList.add('active');
 
-        // Update and show main button when point is selected
-        tg.MainButton.text = `Выбрать ${serviceConfig.name}`;
-        tg.MainButton.show();
+        if (!isIOS) {
+            tg.MainButton.text = `Выбрать ${serviceConfig.name}`;
+            tg.MainButton.show();
+        }
 
-        // Center map on selected point
         map.setCenter(point.coordinates, 16, {
             duration: 500
         });
@@ -993,37 +921,32 @@
         console.log('Point selected:', point);
     }
 
-    // Handle tab switching
     document.querySelectorAll('.delivery-tab').forEach(tab => {
-        tab.addEventListener('click', function() {
-            // Update active tab
+        tab.addEventListener('click', function () {
             document.querySelectorAll('.delivery-tab').forEach(t => t.classList.remove('active'));
             this.classList.add('active');
 
-            // Update current service
             currentService = this.dataset.service;
 
-            // Hide point info
             document.getElementById('pointInfo').classList.remove('active');
             selectedPoint = null;
 
-            // Hide main button when switching tabs
-            tg.MainButton.hide();
+            document.getElementById('map').classList.add('full-height');
 
-            // Reset last search bounds to force new search
+            if (!isIOS) {
+                tg.MainButton.hide();
+            }
+
             lastSearchBounds = null;
             lastSearchTime = 0;
 
-            // Clear existing markers immediately for tab switch
             clearMarkers();
 
-            // Search new points
             searchDeliveryPoints();
         });
     });
 
-    // Handle search input
-    document.getElementById('searchInput').addEventListener('input', function(e) {
+    document.getElementById('searchInput').addEventListener('input', function (e) {
         clearTimeout(searchTimeout);
         const query = e.target.value.trim();
 
@@ -1039,19 +962,12 @@
         }
     });
 
-    // Handle select button
-    document.getElementById('selectButton').addEventListener('click', function() {
-        console.log('Select button clicked, iOS:', isIOS);
+    document.getElementById('selectButton').addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
 
-        if (isIOS) {
-            if (selectedPoint) {
-                tg.showAlert('Используйте кнопку "Выбрать" внизу экрана');
-            } else {
-                tg.showAlert('Пожалуйста, выберите пункт выдачи на карте');
-            }
-        } else {
-            sendDeliveryData();
-        }
+        console.log('Select button clicked, iOS:', isIOS);
+        sendDeliveryData();
     });
 </script>
 </body>
