@@ -499,15 +499,6 @@
         const methods = [
             () => {
                 return new Promise((resolve) => {
-                    const dataId = Date.now().toString();
-                    localStorage.setItem(`delivery_${dataId}`, JSON.stringify(data));
-
-                    tg.close(`selected:${dataId}`);
-                    resolve('close');
-                });
-            },
-            () => {
-                return new Promise((resolve) => {
                     window.parent.postMessage({
                         webapp_data: JSON.stringify(data)
                     }, '*');
