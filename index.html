@@ -465,20 +465,34 @@
 
 <script>
     const tg = window.Telegram.WebApp;
+    let isWebAppReady = false;
 
     console.log('Telegram WebApp object:', tg);
     console.log('WebApp version:', tg.version);
     console.log('Platform:', tg.platform);
+    console.log('InitData:', tg.initDataUnsafe);
 
     tg.ready();
     tg.expand();
+    isWebAppReady = true;
 
     tg.MainButton.text = "Выберите пункт выдачи на карте";
     tg.MainButton.color = "#4A7C59";
     tg.MainButton.textColor = "#FFFFFF";
+    tg.MainButton.isActive = true;
     tg.MainButton.hide();
 
     function sendDeliveryData() {
+        console.log('sendDeliveryData called', {
+            selectedPoint: selectedPoint,
+            isWebAppReady: isWebAppReady
+        });
+
+        if (!isWebAppReady) {
+            console.error('WebApp not ready');
+            return;
+        }
+
         if (!selectedPoint) {
             tg.showAlert('Пожалуйста, выберите пункт выдачи на карте');
             return;
@@ -491,18 +505,39 @@
             coordinates: selectedPoint.coordinates
         };
 
-        console.log('Sending data to Telegram:', data);
+        console.log('Preparing to send data:', data);
 
+        // Проверяем доступность метода sendData
+        if (typeof tg.sendData !== 'function') {
+            console.error('sendData method not available');
+            tg.showAlert('Метод отправки данных недоступен');
+            return;
+        }
+
+        // Показываем индикатор загрузки
         tg.MainButton.showProgress();
 
-        try {
-            tg.sendData(JSON.stringify(data));
-            console.log('Data sent successfully');
-        } catch (error) {
-            console.error('Error sending data:', error);
-            tg.showAlert('Ошибка отправки данных');
-            tg.MainButton.hideProgress();
-        }
+        setTimeout(() => {
+            try {
+                const jsonData = JSON.stringify(data);
+                console.log('Sending JSON data:', jsonData);
+
+                tg.sendData(jsonData);
+
+                // sendData автоматически закроет WebApp
+                console.log('Data sent successfully');
+            } catch (error) {
+                console.error('Error sending data:', error);
+                tg.MainButton.hideProgress();
+                tg.showAlert('Ошибка при отправке данных: ' + error.message);
+            }
+        }, 100);
+    }
+
+    tg.MainButton.onClick(sendDeliveryData);
+
+    if (!tg.MainButton.onClick) {
+        tg.MainButton.click = sendDeliveryData;
     }
 
     tg.MainButton.onClick(sendDeliveryData);
@@ -520,7 +555,6 @@
     };
 
     applyTelegramTheme();
-    tg.onEvent('themeChanged', applyTelegramTheme);
 
     let map;
     let selectedPoint = null;
@@ -867,23 +901,31 @@
         document.getElementById('pointInfo').classList.add('active');
 
         tg.MainButton.text = `Выбрать пункт ${serviceConfig.name}`;
+        tg.MainButton.isActive = true;
         tg.MainButton.show();
 
-        const selectButton = document.getElementById('selectButton');
-        selectButton.style.display = 'none';
+        document.getElementById('selectButton').style.display = 'none';
+        document.getElementById('mainButtonHint').style.display = 'block';
 
-        const hint = document.getElementById('mainButtonHint');
-        hint.style.display = 'block';
+        if (map) {
+            map.setCenter(point.coordinates, 16, {
+                duration: 500
+            });
+        }
 
-        map.setCenter(point.coordinates, 16, {
-            duration: 500
+        console.log('Point selected:', {
+            point: point,
+            mainButtonState: {
+                isVisible: tg.MainButton.isVisible,
+                isActive: tg.MainButton.isActive,
+                text: tg.MainButton.text,
+                color: tg.MainButton.color
+            }
         });
-
-        console.log('Point selected:', point);
     }
 
     document.querySelectorAll('.delivery-tab').forEach(tab => {
-        tab.addEventListener('click', function () {
+        tab.addEventListener('click', function() {
             document.querySelectorAll('.delivery-tab').forEach(t => t.classList.remove('active'));
             this.classList.add('active');
 
@@ -893,12 +935,12 @@
             selectedPoint = null;
             tg.MainButton.hide();
 
-            lastSearchBounds = null;
-            lastSearchTime = 0;
-
-            clearMarkers();
-
-            searchDeliveryPoints();
+            if (typeof clearMarkers === 'function') {
+                clearMarkers();
+            }
+            if (typeof searchDeliveryPoints === 'function') {
+                searchDeliveryPoints();
+            }
         });
     });
 
@@ -917,6 +959,51 @@
             }, 500);
         }
     });
+
+    tg.onEvent('themeChanged', () => {
+        console.log('Theme changed');
+        if (typeof applyTelegramTheme === 'function') {
+            applyTelegramTheme();
+        }
+    });
+
+    tg.onEvent('viewportChanged', () => {
+        console.log('Viewport changed:', {
+            height: tg.viewportHeight,
+            stableHeight: tg.viewportStableHeight,
+            isExpanded: tg.isExpanded
+        });
+    });
+
+    tg.onEvent('mainButtonClicked', () => {
+        console.log('Main button clicked (event)');
+        sendDeliveryData();
+    });
+
+
+    if (tg.platform === 'android' || tg.platform === 'ios') {
+        document.addEventListener('touchstart', function() {}, {passive: true});
+
+
+        if (tg.HapticFeedback) {
+            const originalSelectPoint = selectPoint;
+            selectPoint = function(point) {
+                tg.HapticFeedback.impactOccurred('light');
+                originalSelectPoint(point);
+            };
+        }
+    }
+
+    let readyCheckInterval = setInterval(() => {
+        if (tg.MainButton && typeof tg.sendData === 'function') {
+            clearInterval(readyCheckInterval);
+            console.log('WebApp fully ready');
+        }
+    }, 100);
+
+    setTimeout(() => {
+        clearInterval(readyCheckInterval);
+    }, 5000);
 
 </script>
 </body>
