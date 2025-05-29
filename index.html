@@ -453,13 +453,9 @@
             <span class="feature-tag">✓ Бережная доставка</span>
             <span class="feature-tag">✓ Хранение до 7 дней</span>
         </div>
-        <button class="select-button" id="selectButton" style="display: none;">
-            Кнопка скрыта - используйте кнопку внизу экрана
+        <button class="select-button" id="selectButton" onclick="sendDeliveryData()">
+            Выбрать этот пункт
         </button>
-        <div id="mainButtonHint"
-             style="display: none; text-align: center; padding: 16px; color: var(--text-light); font-size: 14px;">
-            👇 Используйте кнопку внизу экрана для выбора
-        </div>
     </div>
 </div>
 
@@ -483,18 +479,8 @@
     tg.MainButton.hide();
 
     function sendDeliveryData() {
-        console.log('sendDeliveryData called', {
-            selectedPoint: selectedPoint,
-            isWebAppReady: isWebAppReady
-        });
-
-        if (!isWebAppReady) {
-            console.error('WebApp not ready');
-            return;
-        }
-
         if (!selectedPoint) {
-            tg.showAlert('Пожалуйста, выберите пункт выдачи на карте');
+            tg.showAlert('Выберите пункт выдачи');
             return;
         }
 
@@ -505,33 +491,62 @@
             coordinates: selectedPoint.coordinates
         };
 
-        console.log('Preparing to send data:', data);
+        const button = document.getElementById('selectButton');
+        const originalText = button.textContent;
+        button.textContent = 'Отправка...';
+        button.disabled = true;
 
-        // Проверяем доступность метода sendData
-        if (typeof tg.sendData !== 'function') {
-            console.error('sendData method not available');
-            tg.showAlert('Метод отправки данных недоступен');
-            return;
+        const methods = [
+            () => {
+                return new Promise((resolve, reject) => {
+                    try {
+                        tg.sendData(JSON.stringify(data));
+                        resolve('sendData');
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+            },
+            () => {
+                return new Promise((resolve) => {
+                    const dataId = Date.now().toString();
+                    localStorage.setItem(`delivery_${dataId}`, JSON.stringify(data));
+
+                    tg.close(`selected:${dataId}`);
+                    resolve('close');
+                });
+            },
+            () => {
+                return new Promise((resolve) => {
+                    window.parent.postMessage({
+                        webapp_data: JSON.stringify(data)
+                    }, '*');
+                    setTimeout(() => {
+                        tg.close();
+                        resolve('postMessage');
+                    }, 500);
+                });
+            }
+        ];
+
+        async function tryMethods() {
+            for (const method of methods) {
+                try {
+                    const result = await method();
+                    console.log(`Success with method: ${result}`);
+                    return;
+                } catch (e) {
+                    console.error('Method failed:', e);
+                    continue;
+                }
+            }
+
+            button.textContent = originalText;
+            button.disabled = false;
+            tg.showAlert('Не удалось отправить данные. Попробуйте еще раз.');
         }
 
-        // Показываем индикатор загрузки
-        tg.MainButton.showProgress();
-
-        setTimeout(() => {
-            try {
-                const jsonData = JSON.stringify(data);
-                console.log('Sending JSON data:', jsonData);
-
-                tg.sendData(jsonData);
-
-                // sendData автоматически закроет WebApp
-                console.log('Data sent successfully');
-            } catch (error) {
-                console.error('Error sending data:', error);
-                tg.MainButton.hideProgress();
-                tg.showAlert('Ошибка при отправке данных: ' + error.message);
-            }
-        }, 100);
+        tryMethods();
     }
 
     tg.MainButton.onClick(sendDeliveryData);
@@ -925,7 +940,7 @@
     }
 
     document.querySelectorAll('.delivery-tab').forEach(tab => {
-        tab.addEventListener('click', function() {
+        tab.addEventListener('click', function () {
             document.querySelectorAll('.delivery-tab').forEach(t => t.classList.remove('active'));
             this.classList.add('active');
 
@@ -982,12 +997,13 @@
 
 
     if (tg.platform === 'android' || tg.platform === 'ios') {
-        document.addEventListener('touchstart', function() {}, {passive: true});
+        document.addEventListener('touchstart', function () {
+        }, {passive: true});
 
 
         if (tg.HapticFeedback) {
             const originalSelectPoint = selectPoint;
-            selectPoint = function(point) {
+            selectPoint = function (point) {
                 tg.HapticFeedback.impactOccurred('light');
                 originalSelectPoint(point);
             };
