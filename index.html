@@ -461,27 +461,51 @@
     tg.ready();
     tg.expand();
 
-    // Enable the main button for testing
-    tg.MainButton.text = "Готово";
-    tg.MainButton.show();
+    // Enable the main button
+    tg.MainButton.text = "Выберите пункт выдачи";
+    tg.MainButton.hide();
 
-    // Handle main button click as alternative
-    tg.MainButton.onClick(function() {
-        console.log('Main button clicked');
-        if (selectedPoint) {
-            const data = {
-                service: currentService,
-                name: selectedPoint.name,
-                address: selectedPoint.address,
-                coordinates: selectedPoint.coordinates
-            };
-
-            console.log('Sending data via MainButton:', data);
-            tg.sendData(JSON.stringify(data));
-        } else {
+    function sendDeliveryData() {
+        if (!selectedPoint) {
             tg.showAlert('Пожалуйста, выберите пункт выдачи на карте');
+            return;
         }
-    });
+
+        const data = {
+            service: currentService,
+            name: selectedPoint.name,
+            address: selectedPoint.address,
+            coordinates: selectedPoint.coordinates
+        };
+
+        console.log('Sending data to Telegram:', data);
+
+        try {
+            if (tg.sendData) {
+                tg.sendData(JSON.stringify(data));
+                console.log('Data sent successfully');
+            } else {
+                console.error('tg.sendData is not available');
+                tg.showAlert('Ошибка: sendData недоступен');
+                return;
+            }
+
+            // Close WebApp
+            setTimeout(() => {
+                if (tg.close) {
+                    tg.close();
+                } else {
+                    console.error('tg.close is not available');
+                }
+            }, 100);
+        } catch (error) {
+            console.error('Error sending data:', error);
+            tg.showAlert('Ошибка отправки данных: ' + error.message);
+        }
+    }
+
+    // Handle main button click
+    tg.MainButton.onClick(sendDeliveryData);
 
     // Apply Telegram theme colors
     const applyTelegramTheme = () => {
@@ -705,9 +729,7 @@
             navigator.geolocation.getCurrentPosition(
                 (position) => {
                     const center = [position.coords.longitude, position.coords.latitude];
-                    map.setLocation({
-                        center: center,
-                        zoom: 14,
+                    map.setCenter(center, 14, {
                         duration: 500
                     });
                 },
@@ -905,14 +927,12 @@
 
         document.getElementById('pointInfo').classList.add('active');
 
-        // Update main button text when point is selected
+        // Update and show main button when point is selected
         tg.MainButton.text = `Выбрать ${serviceConfig.name}`;
         tg.MainButton.show();
 
         // Center map on selected point
-        map.setLocation({
-            center: point.coordinates,
-            zoom: 16,
+        map.setCenter(point.coordinates, 16, {
             duration: 500
         });
 
@@ -932,6 +952,9 @@
             // Hide point info
             document.getElementById('pointInfo').classList.remove('active');
             selectedPoint = null;
+
+            // Hide main button when switching tabs
+            tg.MainButton.hide();
 
             // Reset last search bounds to force new search
             lastSearchBounds = null;
@@ -965,38 +988,7 @@
     // Handle select button
     document.getElementById('selectButton').addEventListener('click', function() {
         if (selectedPoint) {
-            // Prepare data for Telegram
-            const data = {
-                service: currentService,
-                name: selectedPoint.name,
-                address: selectedPoint.address,
-                coordinates: selectedPoint.coordinates
-            };
-
-            console.log('Sending data to Telegram:', data);
-
-            try {
-                // Send data back to Telegram bot
-                if (tg.sendData) {
-                    tg.sendData(JSON.stringify(data));
-                    console.log('Data sent successfully');
-                } else {
-                    console.error('tg.sendData is not available');
-                    alert('Ошибка: sendData недоступен');
-                }
-
-                // Close WebApp
-                setTimeout(() => {
-                    if (tg.close) {
-                        tg.close();
-                    } else {
-                        console.error('tg.close is not available');
-                    }
-                }, 100);
-            } catch (error) {
-                console.error('Error sending data:', error);
-                alert('Ошибка отправки данных: ' + error.message);
-            }
+            sendDeliveryData();
         } else {
             alert('Пожалуйста, выберите пункт выдачи на карте');
         }
