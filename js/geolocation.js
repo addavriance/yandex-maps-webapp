@@ -121,7 +121,7 @@ const GeolocationService = (() => {
      */
     const getIpBasedLocation = async () => {
         try {
-            const services = ['https://ipapi.co/json/', 'https://ip-api.com/json/', 'https://ipinfo.io/json'];
+            const services = ['https://ipinfo.io/json'];
 
             for (const service of services) {
                 try {
@@ -137,18 +137,13 @@ const GeolocationService = (() => {
                     if (response.ok) {
                         const data = await response.json();
 
-                        if (service.includes('ipapi.co')) {
-                            return [data.longitude, data.latitude];
-                        } else if (service.includes('ip-api.com')) {
-                            return [data.lon, data.lat];
-                        } else if (service.includes('ipinfo.io') && data.loc) {
+                        if (service.includes('ipinfo.io') && data.loc) {
                             const [lat, lon] = data.loc.split(',');
                             return [parseFloat(lon), parseFloat(lat)];
                         }
                     }
                 } catch (serviceError) {
                     console.warn(`Failed to get location from ${service}:`, serviceError.message);
-                    continue;
                 }
             }
 
