@@ -170,6 +170,12 @@
             flex: 1;
             width: 100%;
             position: relative;
+            transition: height 0.3s ease;
+        }
+
+        /* Когда информация о пункте скрыта, карта занимает больше места */
+        #map.full-height {
+            height: calc(100vh - 200px); /* Вычитаем высоту хедера */
         }
 
         .map-overlay {
@@ -213,8 +219,12 @@
             border-top: 1px solid var(--border);
             transform: translateY(100%);
             transition: transform 0.3s ease;
-            position: relative;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
             box-shadow: 0 -4px 12px var(--shadow);
+            z-index: 1000;
         }
 
         .point-info.active {
@@ -453,34 +463,40 @@
             <span class="feature-tag">✓ Бережная доставка</span>
             <span class="feature-tag">✓ Хранение до 7 дней</span>
         </div>
-        <button class="select-button" id="selectButton" onclick="sendDeliveryData()">
-            Выбрать этот пункт
+        <button class="select-button" id="selectButton">
+            Выбрать этот пункт выдачи
         </button>
     </div>
 </div>
 
 <script>
     const tg = window.Telegram.WebApp;
-    let isWebAppReady = false;
 
     console.log('Telegram WebApp object:', tg);
     console.log('WebApp version:', tg.version);
+    console.log('WebApp initData:', tg.initData);
+    console.log('WebApp user:', tg.initDataUnsafe?.user);
     console.log('Platform:', tg.platform);
-    console.log('InitData:', tg.initDataUnsafe);
+    console.log('Is iOS:', /iPad|iPhone|iPod/.test(navigator.userAgent));
 
     tg.ready();
     tg.expand();
-    isWebAppReady = true;
 
-    tg.MainButton.text = "Выберите пункт выдачи на карте";
-    tg.MainButton.color = "#4A7C59";
-    tg.MainButton.textColor = "#FFFFFF";
-    tg.MainButton.isActive = true;
-    tg.MainButton.hide();
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isTelegramDesktop = tg.platform === 'tdesktop';
+
+    if (isIOS) {
+        console.log('iOS detected - using alternative approach');
+        tg.MainButton.hide();
+    } else {
+        console.log('Non-iOS platform - using MainButton');
+        tg.MainButton.text = "Выберите пункт выдачи";
+        tg.MainButton.hide();
+    }
 
     function sendDeliveryData() {
         if (!selectedPoint) {
-            tg.showAlert('Выберите пункт выдачи');
+            tg.showAlert('Пожалуйста, выберите пункт выдачи на карте');
             return;
         }
 
@@ -491,52 +507,44 @@
             coordinates: selectedPoint.coordinates
         };
 
-        const button = document.getElementById('selectButton');
-        const originalText = button.textContent;
-        button.textContent = 'Отправка...';
-        button.disabled = true;
+        console.log('Sending data to Telegram:', data);
+        console.log('Platform:', tg.platform, 'iOS:', isIOS);
 
-        const methods = [
-            () => {
-                return new Promise((resolve) => {
-                    window.parent.postMessage({
-                        webapp_data: JSON.stringify(data)
-                    }, '*');
+        try {
+            if (tg.sendData) {
+                tg.sendData(JSON.stringify(data));
+                console.log('Data sent successfully via sendData');
+
+                if (isIOS) {
                     setTimeout(() => {
-                        tg.close();
-                        resolve('postMessage');
-                    }, 500);
-                });
-            }
-        ];
-
-        async function tryMethods() {
-            for (const method of methods) {
-                try {
-                    const result = await method();
-                    console.log(`Success with method: ${result}`);
-                    return;
-                } catch (e) {
-                    console.error('Method failed:', e);
-                    continue;
+                        window.close();
+                        if (tg.close) {
+                            tg.close();
+                        }
+                    }, 1000);
+                } else {
+                    setTimeout(() => {
+                        if (tg.close) {
+                            tg.close();
+                        }
+                    }, 300);
                 }
+            } else {
+                console.error('tg.sendData is not available');
+                return;
             }
-
-            button.textContent = originalText;
-            button.disabled = false;
-            tg.showAlert('Не удалось отправить данные. Попробуйте еще раз.');
+        } catch (error) {
+            console.error('Error sending data:', error);
+            alert('Ошибка отправки данных: ' + error.message);
         }
-
-        tryMethods();
     }
 
-    tg.MainButton.onClick(sendDeliveryData);
-
-    if (!tg.MainButton.onClick) {
-        tg.MainButton.click = sendDeliveryData;
+    if (!isIOS) {
+        tg.MainButton.onClick(function () {
+            console.log('MainButton clicked');
+            sendDeliveryData();
+        });
     }
-
-    tg.MainButton.onClick(sendDeliveryData);
 
     const applyTelegramTheme = () => {
         if (tg.themeParams.bg_color) {
@@ -551,6 +559,7 @@
     };
 
     applyTelegramTheme();
+    tg.onEvent('themeChanged', applyTelegramTheme);
 
     let map;
     let selectedPoint = null;
@@ -598,8 +607,8 @@
                         <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="rgba(0, 0, 0, 0.3)"/>
                     </filter>
                 </defs>
-                <path d="M16 42C16 42 32 26 32 16C32 7.163 24.837 0 16 0S0 7.163 0 16C0 26 16 42 16 42Z" 
-                      fill="url(#pinGradient_${service}${isSelected ? '_selected' : ''})" 
+                <path d="M16 42C16 42 32 26 32 16C32 7.163 24.837 0 16 0S0 7.163 0 16C0 26 16 42 16 42Z"
+                      fill="url(#pinGradient_${service}${isSelected ? '_selected' : ''})"
                       filter="url(#shadow_${service}${isSelected ? '_selected' : ''})"/>
                 <circle cx="16" cy="16" r="8" fill="white"/>
                 <text x="16" y="21" text-anchor="middle" font-size="12" fill="${color1}">${config.icon}</text>
@@ -659,6 +668,8 @@
             setTimeout(() => {
                 isMapReady = true;
                 lastSearchBounds = map.getBounds();
+
+                document.getElementById('map').classList.add('full-height');
             }, 2000);
 
             document.getElementById('loader').classList.remove('active');
@@ -894,27 +905,20 @@
         pointIconElement.textContent = serviceConfig.icon;
         pointIconElement.style.background = `linear-gradient(135deg, ${serviceConfig.colors[0]}20, ${serviceConfig.colors[1]}20)`;
 
+        document.getElementById('map').classList.remove('full-height');
+
         document.getElementById('pointInfo').classList.add('active');
 
-        tg.MainButton.text = `Выбрать пункт ${serviceConfig.name}`;
-        tg.MainButton.isActive = true;
-        tg.MainButton.show();
-
-        if (map) {
-            map.setCenter(point.coordinates, 16, {
-                duration: 500
-            });
+        if (!isIOS) {
+            tg.MainButton.text = `Выбрать ${serviceConfig.name}`;
+            tg.MainButton.show();
         }
 
-        console.log('Point selected:', {
-            point: point,
-            mainButtonState: {
-                isVisible: tg.MainButton.isVisible,
-                isActive: tg.MainButton.isActive,
-                text: tg.MainButton.text,
-                color: tg.MainButton.color
-            }
+        map.setCenter(point.coordinates, 16, {
+            duration: 500
         });
+
+        console.log('Point selected:', point);
     }
 
     document.querySelectorAll('.delivery-tab').forEach(tab => {
@@ -926,14 +930,19 @@
 
             document.getElementById('pointInfo').classList.remove('active');
             selectedPoint = null;
-            tg.MainButton.hide();
 
-            if (typeof clearMarkers === 'function') {
-                clearMarkers();
+            document.getElementById('map').classList.add('full-height');
+
+            if (!isIOS) {
+                tg.MainButton.hide();
             }
-            if (typeof searchDeliveryPoints === 'function') {
-                searchDeliveryPoints();
-            }
+
+            lastSearchBounds = null;
+            lastSearchTime = 0;
+
+            clearMarkers();
+
+            searchDeliveryPoints();
         });
     });
 
@@ -953,52 +962,13 @@
         }
     });
 
-    tg.onEvent('themeChanged', () => {
-        console.log('Theme changed');
-        if (typeof applyTelegramTheme === 'function') {
-            applyTelegramTheme();
-        }
-    });
+    document.getElementById('selectButton').addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
 
-    tg.onEvent('viewportChanged', () => {
-        console.log('Viewport changed:', {
-            height: tg.viewportHeight,
-            stableHeight: tg.viewportStableHeight,
-            isExpanded: tg.isExpanded
-        });
-    });
-
-    tg.onEvent('mainButtonClicked', () => {
-        console.log('Main button clicked (event)');
+        console.log('Select button clicked, iOS:', isIOS);
         sendDeliveryData();
     });
-
-
-    if (tg.platform === 'android' || tg.platform === 'ios') {
-        document.addEventListener('touchstart', function () {
-        }, {passive: true});
-
-
-        if (tg.HapticFeedback) {
-            const originalSelectPoint = selectPoint;
-            selectPoint = function (point) {
-                tg.HapticFeedback.impactOccurred('light');
-                originalSelectPoint(point);
-            };
-        }
-    }
-
-    let readyCheckInterval = setInterval(() => {
-        if (tg.MainButton && typeof tg.sendData === 'function') {
-            clearInterval(readyCheckInterval);
-            console.log('WebApp fully ready');
-        }
-    }, 100);
-
-    setTimeout(() => {
-        clearInterval(readyCheckInterval);
-    }, 5000);
-
 </script>
 </body>
 </html>
