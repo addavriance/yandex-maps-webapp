@@ -90,7 +90,7 @@ const GeolocationService = (() => {
                 (position) => {
                     clearTimeout(timeoutId);
 
-                    const location = [position.coords.longitude, position.coords.latitude];
+                    const location = [position.coords.latitude, position.coords.longitude];
                     userLocation = location;
                     permissionStatus = 'granted';
 
