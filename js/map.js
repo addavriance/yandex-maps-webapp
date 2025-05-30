@@ -166,7 +166,7 @@ const MapService = (() => {
 
         try {
             const searchOptions = {
-                results: 20, boundedBy: map.getBounds(), strictBounds: true
+                results: 100, boundedBy: map.getBounds(), strictBounds: true
             };
 
             searchManager(query, searchOptions).then(function (res) {
