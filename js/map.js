@@ -91,7 +91,7 @@ const MapService = (() => {
                     const currentBounds = map.getBounds();
                     const currentTime = Date.now();
 
-                    if (currentTime - lastSearchTime < 2000) {
+                    if (currentTime - lastSearchTime < 500) {
                         return;
                     }
 
@@ -103,7 +103,7 @@ const MapService = (() => {
                     lastSearchBounds = currentBounds;
 
                     searchDeliveryPoints(null, true);
-                }, 1500);
+                }, 500);
             });
 
             setTimeout(() => {
