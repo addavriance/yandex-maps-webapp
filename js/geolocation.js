@@ -1,6 +1,6 @@
 /**
  * Geolocation service
- * Handles user location detection with browser and fallback methods
+ * Handles user location detection with improved error handling
  */
 const GeolocationService = (() => {
     const DEFAULT_LOCATION = [55.7558, 37.6173];
@@ -8,6 +8,8 @@ const GeolocationService = (() => {
     let userLocation = null;
 
     let permissionStatus = 'unknown';
+    const IP_GEOLOCATION_TIMEOUT = 5000;
+
     /**
      * Display a feedback toast message
      * @param {string} message - Message to show
@@ -64,90 +66,91 @@ const GeolocationService = (() => {
             }
 
             const options = {
-                enableHighAccuracy: true, timeout: 7000, maximumAge: 0
+                enableHighAccuracy: true,
+                timeout: 5000, maximumAge: 0
             };
 
+            let ipLocationPromise = getIpBasedLocation();
+
             if (showPrompt) {
-                showToast('Запрашиваем доступ к вашему местоположению...', 5000);
+                showToast('Определяем ваше местоположение...', 3000);
             }
 
-            navigator.geolocation.getCurrentPosition((position) => {
-                const location = [position.coords.longitude, position.coords.latitude];
-                userLocation = location;
-                permissionStatus = 'granted';
-
+            const timeoutId = setTimeout(async () => {
                 try {
-                    sessionStorage.setItem('geolocation_permitted', 'true');
-                } catch (e) {
-                    console.warn('Session storage not available', e);
+                    console.log('Browser geolocation timeout, using IP fallback');
+                    const ipLocation = await ipLocationPromise;
+                    resolve(ipLocation);
+                } catch (err) {
+                    console.error('Both browser and IP geolocation failed', err);
+                    reject(err);
                 }
+            }, 3000);
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    clearTimeout(timeoutId);
 
-                resolve(location);
-            }, (error) => {
-                console.warn('Geolocation error:', error);
+                    const location = [position.coords.longitude, position.coords.latitude];
+                    userLocation = location;
+                    permissionStatus = 'granted';
 
-                if (error.code === 1) {
-                    permissionStatus = 'denied';
+                    resolve(location);
+                },
+                (error) => {
+                    console.warn('Geolocation error:', error);
 
-                    try {
-                        sessionStorage.setItem('geolocation_permitted', 'false');
-                    } catch (e) {
-                        console.warn('Session storage not available', e);
+                    clearTimeout(timeoutId);
+
+                    if (error.code === 1) {
+                        permissionStatus = 'denied';
+                    } else if (error.code === 2) {
+                        permissionStatus = 'unavailable';
+                    } else if (error.code === 3) {
+                        permissionStatus = 'timeout';
                     }
 
-                    if (showPrompt) {
-                        showToast('Для точного определения пунктов выдачи разрешите доступ к геолокации', 4000);
-                    }
-                } else if (error.code === 2) {
-                    permissionStatus = 'unavailable';
-                    if (showPrompt) {
-                        showToast('Не удалось определить ваше местоположение', 3000);
-                    }
-                } else if (error.code === 3) {
-                    permissionStatus = 'timeout';
-                    if (showPrompt) {
-                        showToast('Истекло время определения местоположения', 3000);
-                    }
-                }
-
-                reject(error);
-            }, options);
+                    ipLocationPromise
+                        .then(location => {
+                            resolve(location);
+                        })
+                        .catch(ipError => {
+                            console.error('IP geolocation also failed after browser geolocation error', ipError);
+                            reject(error);
+                        });
+                },
+                options
+            );
         });
     };
 
     /**
-     * Get user location from IP-based services (as fallback)
+     * Get user location from ipinfo.io service
      * @returns {Promise<Array>} - [longitude, latitude]
      */
     const getIpBasedLocation = async () => {
         try {
-            const services = ['https://ipinfo.io/json'];
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), IP_GEOLOCATION_TIMEOUT);
 
-            for (const service of services) {
-                try {
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 3000);
+            const response = await fetch('https://ipinfo.io/json', {
+                signal: controller.signal,
+                mode: 'cors',
+                cache: 'no-cache'
+            });
 
-                    const response = await fetch(service, {
-                        signal: controller.signal, mode: 'cors', cache: 'no-cache'
-                    });
+            clearTimeout(timeoutId);
 
-                    clearTimeout(timeoutId);
+            if (response.ok) {
+                const data = await response.json();
+                console.log('IP Geolocation data:', data);
 
-                    if (response.ok) {
-                        const data = await response.json();
-
-                        if (service.includes('ipinfo.io') && data.loc) {
-                            const [lat, lon] = data.loc.split(',');
-                            return [parseFloat(lon), parseFloat(lat)];
-                        }
-                    }
-                } catch (serviceError) {
-                    console.warn(`Failed to get location from ${service}:`, serviceError.message);
+                if (data.loc) {
+                    const [lat, lon] = data.loc.split(',');
+                    return [parseFloat(lat), parseFloat(lon)];
                 }
             }
 
-            throw new Error('All geolocation services failed');
+            throw new Error('IP geolocation response missing location data');
         } catch (error) {
             console.error('Error getting IP-based location:', error);
             return DEFAULT_LOCATION;
@@ -156,30 +159,28 @@ const GeolocationService = (() => {
 
     /**
      * Get user location with fallback strategy
-     * @param {boolean} forceBrowser - Whether to force browser geolocation
+     * Always tries IP-based location first for reliability
      * @returns {Promise<Array>} - [longitude, latitude]
      */
-    const getUserLocation = async (forceBrowser = false) => {
-        let previouslyPermitted = false;
+    const getUserLocation = async () => {
         try {
-            previouslyPermitted = sessionStorage.getItem('geolocation_permitted') === 'true';
-        } catch (e) {
-            console.warn('Session storage not available', e);
-        }
+            const ipLocation = await getIpBasedLocation();
+            userLocation = ipLocation;
 
-        if (previouslyPermitted || forceBrowser) {
             try {
-                const location = await getBrowserLocation(!previouslyPermitted);
-                return location;
-            } catch (error) {
-                console.warn('Browser geolocation failed, falling back to IP-based:', error);
-            }
-        }
+                const browserLocation = await Promise.race([
+                    getBrowserLocation(false),
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('Browser geolocation timeout')), 3000)
+                    )
+                ]);
 
-        try {
-            const location = await getIpBasedLocation();
-            userLocation = location;
-            return location;
+                userLocation = browserLocation;
+                return browserLocation;
+            } catch (browserError) {
+                console.log('Using IP location as browser geolocation failed or timed out', browserError);
+                return ipLocation;
+            }
         } catch (error) {
             console.error('All geolocation methods failed, using default location:', error);
             userLocation = DEFAULT_LOCATION;
@@ -198,7 +199,8 @@ const GeolocationService = (() => {
         if (!map) return null;
 
         try {
-            const location = await getBrowserLocation(false);
+            let location = await getIpBasedLocation();
+            userLocation = location;
 
             if (window.TelegramApp && window.TelegramApp.hapticFeedback) {
                 window.TelegramApp.hapticFeedback('light');
@@ -210,35 +212,50 @@ const GeolocationService = (() => {
                 map.setCenter(location, zoom);
             }
 
+            getBrowserLocation(false).then(browserLocation => {
+                const distance = calculateDistance(location, browserLocation);
+                if (distance > 0.5) {
+                    userLocation = browserLocation;
+                    map.setCenter(browserLocation, zoom, {duration: 500});
+                }
+            }).catch(error => {
+                console.log('Browser location failed after centering on IP location', error);
+            });
+
             return location;
         } catch (error) {
-            console.warn('Could not center on browser location, using stored location:', error);
+            console.error('Failed to center map on any location:', error);
 
-            if (userLocation) {
-                if (withAnimation) {
-                    map.setCenter(userLocation, zoom, {duration: 500});
-                } else {
-                    map.setCenter(userLocation, zoom);
-                }
-                return userLocation;
+            if (withAnimation) {
+                map.setCenter(DEFAULT_LOCATION, zoom, {duration: 500});
+            } else {
+                map.setCenter(DEFAULT_LOCATION, zoom);
             }
 
-            try {
-                const ipLocation = await getIpBasedLocation();
-                userLocation = ipLocation;
-
-                if (withAnimation) {
-                    map.setCenter(ipLocation, zoom, {duration: 500});
-                } else {
-                    map.setCenter(ipLocation, zoom);
-                }
-
-                return ipLocation;
-            } catch (finalError) {
-                console.error('Failed to center map on any location:', finalError);
-                return null;
-            }
+            return DEFAULT_LOCATION;
         }
+    };
+
+    /**
+     * Calculate approximate distance between two points in km
+     * @param {Array} point1 - [lon1, lat1]
+     * @param {Array} point2 - [lon2, lat2]
+     * @returns {number} - Distance in kilometers
+     */
+    const calculateDistance = (point1, point2) => {
+        const toRad = value => value * Math.PI / 180;
+
+        const R = 6371;
+        const dLat = toRad(point2[1] - point1[1]);
+        const dLon = toRad(point2[0] - point1[0]);
+
+        const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(toRad(point1[1])) * Math.cos(toRad(point2[1])) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
     };
 
     /**
@@ -277,23 +294,14 @@ const GeolocationService = (() => {
         return button;
     };
 
-    /**
-     * Request permission for geolocation explicitly
-     * @returns {Promise<boolean>} - Whether permission was granted
-     */
-    const requestPermission = async () => {
-        try {
-            await getBrowserLocation(true);
-            return true;
-        } catch (error) {
-            return false;
-        }
-    };
-
     return {
-        getUserLocation, centerOnUserLocation, createGeolocationButton, requestPermission, get currentLocation() {
+        getUserLocation,
+        centerOnUserLocation,
+        createGeolocationButton,
+        get currentLocation() {
             return userLocation;
-        }, get permissionStatus() {
+        },
+        get permissionStatus() {
             return permissionStatus;
         }
     };
